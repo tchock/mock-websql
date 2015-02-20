@@ -1,0 +1,32 @@
+{
+  "name": "mock-websql",
+  "version": "0.0.8",
+  "homepage": "https://github.com/tchock/mock-websql",
+  "authors": [
+    "Simon Jentsch <sjentsch@hyphe.me>"
+  ],
+  "description": "A WebSQL mock for unit testing",
+  "main": "websql.js",
+  "moduleType": [
+    "globals"
+  ],
+  "keywords": [
+    "unit",
+    "tests",
+    "mock",
+    "WebSQL",
+    "database",
+    "testing"
+  ],
+  "license": "MIT",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "sql-parser": "forward/sql-parser",
+  }
+}
