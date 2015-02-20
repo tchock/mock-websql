@@ -1,6 +1,6 @@
 {
   "name": "mock-websql",
-  "version": "0.0.0",
+  "version": "0.0.8",
   "homepage": "https://github.com/tchock/mock-websql",
   "authors": [
     "Simon Jentsch <sjentsch@hyphe.me>"
@@ -25,5 +25,8 @@
     "bower_components",
     "test",
     "tests"
-  ]
+  ],
+  "dependencies": {
+    "sql-parser": "forward/sql-parser",
+  }
 }
