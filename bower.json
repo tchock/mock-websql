@@ -27,6 +27,6 @@
     "tests"
   ],
   "dependencies": {
-    "sql-parser": "forward/sql-parser",
+    "sql-parser": "forward/sql-parser"
   }
 }
