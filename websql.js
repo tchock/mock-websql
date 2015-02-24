@@ -48,12 +48,16 @@ var MockSQLTransaction = function (db) {
 MockSQLTransaction.prototype.executeSql = function (
     sqlStatement, args, callback, errorCallback) {
   var i, j;
+  var statementParts, tableName;
+  var tableDef, tableData;
+  var field;
+  var whereLeft, whereRight, rowsAffected;
   // TODO build statement with args
 
   // CREATE
   if (sqlStatement.substring(0, 12) === 'CREATE TABLE') {
-    var statementParts = sqlStatement.match(/CREATE TABLE (.*?) \((.*)\)/);
-    var tableName = statementParts[1];
+    statementParts = sqlStatement.match(/CREATE TABLE (.*?) \((.*)\)/);
+    tableName = statementParts[1];
     var tableRowString = statementParts[2];
     var tableRows = tableRowString.match(/([^\\\][^,]|\\,)+/g);
 
@@ -72,6 +76,10 @@ MockSQLTransaction.prototype.executeSql = function (
             tableRows[i].type = 'VARCHAR';
             tableRows[i].size = 255;
             break;
+          case 'TEXT':
+            tableRows[i].type = 'TEXT';
+            tableRows[i].size = -1;
+            break;
           case 'PRIMARY':
             tableRows[i].primary = true;
             break;
@@ -80,32 +88,144 @@ MockSQLTransaction.prototype.executeSql = function (
             break;
           case 'AUTOINCREMENT':
             tableRows[i].autoIncrement = true;
+            tableRows[i].autoIncrementValue = 1;
+            break;
+          case 'UNIQUE':
+            tableRows[i].unique = true;
+            break;
+          case 'NOT':
+            tableRows[i].not = true;
+            break;
+          case 'NULL':
+            tableRows[i].null = true;
             break;
         }
       }
     }
     mockSQLStorageDef[this.db._name][tableName] = tableRows;
+    mockSQLStorage[this.db._name][tableName] = [];
 
-    // TODO Callback when CREATE TABLE finishes
+    callback(this, null);
     return;
   }
 
-  // TODO drop
+  // DROP TABLE
+  else if (sqlStatement.substring(0, 20) === 'DROP TABLE IF EXISTS') {
+    statementParts = sqlStatement.match(/DROP TABLE IF EXISTS [\"\`]{0,1}([\w_-]+?)[\"\`]{0,1}$/);
+    tableName = statementParts[1];
+    delete mockSQLStorage[this.db._name][tableName];
+    delete mockSQLStorageDef[this.db._name][tableName];
+    callback(this, new MockSQLResultSet([]));
+    return;
+  }
+
+  // INSERT INTO
+  else if (sqlStatement.substring(0, 11) === 'INSERT INTO') {
+    statementParts = sqlStatement.match(/INSERT INTO (.*?) \((.*?)\) values \((.*?)\)$/);
+    tableName = statementParts[1];
+    var keys = statementParts[2];
+    var values = statementParts[3];
+    var insertId;
+    tableDef = mockSQLStorageDef[this.db._name][tableName];
+
+    // table keys
+    keys = keys.split(', ');
+    values = values.replace(/\'/g, '');
+    values = values.split(', ');
+
+    var newEntry = {};
+    for (i = 0; i < tableDef.length; i++) {
+      var fieldDefined = false;
+      for (j = 0; j < keys.length; j++) {
+        if (keys[j] === tableDef[i].name) {
+          newEntry[keys[j]] = values[j];
+          fieldDefined = true;
+          break;
+        }
+      }
+
+      if (!fieldDefined && tableDef[i].autoIncrement) {
+        newEntry[tableDef[i].name] = tableDef[i].autoIncrementValue++;
+        if (tableDef[i].primary) {
+          insertId = newEntry[i];
+        }
+      } else if (!fieldDefined) {
+        newEntry[i] = null;
+      }
+    }
+
+    mockSQLStorage[this.db._name][tableName].push(newEntry);
+
+    callback(this, new MockSQLResultSet(newEntry, 1, insertId));
+    return;
+  }
+
+  // UPDATE
+  else if (sqlStatement.substring(0, 6) === 'UPDATE') {
+    statementParts = sqlStatement.match(/UPDATE\s([\w-_]+?)\s+SET\s+(.*?)\s+WHERE\s+([\w-_]+?)\s*=\s*(.*?)$/);
+    tableName = statementParts[1];
+    var setFields = statementParts[2];
+    whereLeft = statementParts[3];
+    whereRight = statementParts[4];
+    if (!isNaN(whereRight)) {
+      whereRight = parseInt(whereRight);
+    }
+    rowsAffected = 0;
+    tableData = mockSQLStorage[this.db._name][tableName];
+
+    setFields = setFields.replace(/[\'\"\(\)]|/g, '');
+    setFields = setFields.split(', ');
+    for (i = 0; i < setFields.length; i++) {
+      setFields[i] = setFields[i].replace(/\s*=\s*/, '=');
+      setFields[i] = setFields[i].split('=');
+    }
+
+    for (i = 0; i < tableData.length; i++) {
+      if (!whereLeft || tableData[i][whereLeft] === whereRight) {
+        for (j = 0; j < setFields.length; j++) {
+          tableData[i][setFields[j][0]] = setFields[j][1];
+        }
+        rowsAffected++;
+      }
+    }
+
+    callback(this, new MockSQLResultSet([], rowsAffected));
+    return;
+  }
+
+  // DELELTE
+  else if (sqlStatement.substring(0, 11) === 'DELETE FROM') {
+    statementParts = sqlStatement.match(/DELETE\sFROM\s([\w-_]+?)\s+WHERE\s+([\w-_]+?)\s*=\s*(.*?)$/);
+    tableName = statementParts[1];
+    whereLeft = statementParts[2];
+    whereRight = statementParts[3];
+    if (!isNaN(whereRight)) {
+      whereRight = parseInt(whereRight);
+    } else {
+      whereRight = whereRight.replace(/[\"\']/g, '');
+    }
+
+    rowsAffected = 0;
+    tableData = mockSQLStorage[this.db._name][tableName];
+
+    for (i = 0; i < tableData.length; i++) {
+      if (!whereLeft || tableData[i][whereLeft] === whereRight) {
+        tableData.splice(i--,1);
+        rowsAffected++;
+      }
+    }
+
+    callback(this, new MockSQLResultSet([], rowsAffected));
+    return;
+  }
 
   // Other statements
   var parsedSql = SQLParser.parse(sqlStatement);
   var outputData = [];
-
-  console.log(SQLParser);
-  console.log(parsedSql);
-
-  // CREATE statement
-
-
   // SELECT statements
   if (parsedSql instanceof SQLParser.nodes.Select) {
-    var tableData = mockSQLStorage[this.db._name][parsedSql.source.name.value];
-    var tableDef = mockSQLStorageDef[this.db._name][parsedSql.source.name.value];
+    tableData = mockSQLStorage[this.db._name][parsedSql.source.name.value];
+    tableDef = mockSQLStorageDef[this.db._name][parsedSql.source.name.value];
     var limit = (parsedSql.limit === null) ? undefined : parsedSql.limit.value.value;
     var addedItem;
     // iterate through table data
@@ -114,11 +234,10 @@ MockSQLTransaction.prototype.executeSql = function (
       if (!parsedSql.where || itemMatchesCondition(tableData[i], parsedSql.where.conditions)) {
         addedItem = {};
         // iterate through all fields that should be selected
-        for (var field in parsedSql.fields) {
+        for (field in parsedSql.fields) {
           if (parsedSql.fields.hasOwnProperty(field)) {
             // if star is used, add all fields to the addedItem
             if (parsedSql.fields[field] instanceof SQLParser.nodes.Star) {
-              // TODO use the table definition instead of the data object
               for (var key in tableDef) {
                 if (tableData[i].hasOwnProperty(key)) {
                   addedItem[key] = tableData[i][key];
@@ -127,10 +246,10 @@ MockSQLTransaction.prototype.executeSql = function (
             // no star but actual field name stated
             } else {
               var fieldName = parsedSql.fields[field].field.value;
-              // TODO check for definition instead of data object property
-              // TODO error handling!
-              if (tableData[i].hasOwnProperty(fieldName)) {
+              if (tableDef.hasOwnProperty(fieldName)) {
                 addedItem[fieldName] = tableData[i][fieldName];
+              } else {
+                // TODO error handling!
               }
             }
           }
@@ -168,7 +287,7 @@ MockSQLTransaction.prototype.executeSql = function (
     // TODO SELECT group
   }
 
-  // TODO implementation of insert into, update, delete, count, drop table if exists, create table
+  // TODO implementation of count
 
   if (callback !== undefined) {
     callback(this, new MockSQLResultSet(outputData));
@@ -221,7 +340,8 @@ function itemMatchesCondition(item, condition) {
       return item[left.value] === right.value;
     case '!=':
       return item[left.value] !== right.value;
-    // TODO LIKE
+    case 'LIKE':
+
     case 'AND':
       return left && right;
     case 'OR':
